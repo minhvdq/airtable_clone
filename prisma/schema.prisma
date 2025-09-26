@@ -1,0 +1,233 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    // NOTE: When using mysql or sqlserver, uncomment the @db.Text annotations in model Account below
+    // Further reading:
+    // https://next-auth.js.org/adapters/prisma#create-the-prisma-schema
+    // https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#string
+    url      = env("DATABASE_URL")
+}
+
+enum OperatorType{
+    // For text 
+    CONTAINS
+    NOT_CONTAINS
+
+    // For numbers
+    GREATER_THAN
+    LESS_THAN
+    GREATER_THAN_OR_EQUAL_TO
+    LESS_THAN_OR_EQUAL_TO
+
+    // For both text and numbers
+    EQUALS
+    NOT_EQUALS
+    IS_EMPTY
+    IS_NOT_EMPTY
+}
+
+enum SortDirection{
+    ASC
+    DESC
+}
+
+enum ColumnType{
+    STRING
+    INTEGER
+}
+
+model Post {
+    id        Int      @id @default(autoincrement())
+    name      String
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    createdBy   User   @relation(fields: [createdById], references: [id])
+    createdById String
+
+    @@index([name])
+}
+
+// Necessary for Next auth
+model Account {
+    id                       String  @id @default(cuid())
+    userId                   String
+    type                     String
+    provider                 String
+    providerAccountId        String
+    refresh_token            String? // @db.Text
+    access_token             String? // @db.Text
+    expires_at               Int?
+    token_type               String?
+    scope                    String?
+    id_token                 String? // @db.Text
+    session_state            String?
+    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    refresh_token_expires_in Int?
+
+    @@unique([provider, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(cuid())
+    sessionToken String   @unique
+    userId       String
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+    id            String    @id @default(cuid())
+    name          String?
+    email         String?   @unique
+    emailVerified DateTime?
+    image         String?
+    accounts      Account[]
+    sessions      Session[]
+    posts         Post[]
+    bases         Base[]
+    workspaces    Workspace[]
+}
+
+model VerificationToken {
+    identifier String
+    token      String   @unique
+    expires    DateTime
+
+    @@unique([identifier, token])
+}
+
+model Workspace{
+    id          String   @id @default(uuid())
+    name        String
+    createdAt   DateTime @default(now())
+    starred     Boolean @default(false)
+
+    createdBy   User   @relation(fields: [createdById], references: [id])
+    createdById String
+    
+    bases       Base[]
+    @@index([createdById])
+    @@index([name])
+    // @@unique([name, createdById])
+}
+
+model Base{
+    id          String   @id @default(uuid())
+    name        String
+    createdAt   DateTime @default(now())
+    lastOpenAt  DateTime @default(now())
+    starred     Boolean @default(false)
+
+    createdBy   User   @relation(fields: [createdById], references: [id])
+    createdById String
+    tables      Table[]
+    workspace   Workspace   @relation(fields: [workspaceId], references: [id])
+    workspaceId String
+    @@index([createdById])
+    @@index([name])
+    // @@unique([name, createdById])
+}
+
+model Table{
+    id          String      @id @default(uuid())
+    name        String
+    createdAt   DateTime @default(now())
+
+    base        Base      @relation(fields: [baseId], references: [id])
+    baseId      String
+    createdById String
+    columns     Column[]
+    rows        Row[]
+    views       View[]
+    @@index([baseId])
+    @@index([name])
+    @@unique([name, baseId])
+}
+
+model Column{
+    id          String      @id @default(uuid())
+    name        String
+    createdAt   DateTime @default(now())
+    type        ColumnType
+    position    Int
+    shown       Boolean   @default(true)
+
+    table        Table      @relation(fields: [tableId], references: [id])
+    tableId      String
+    cells       Cell[]
+    filters     Filter[]
+    
+    sorts       Sort[]
+    @@index([name])
+    @@unique([name, tableId])
+}
+
+model Row{
+    id          String      @id @default(uuid())
+    createdAt   DateTime @default(now())
+    position    Int
+
+    table        Table      @relation(fields: [tableId], references: [id])
+    tableId      String
+    cells       Cell[]
+    @@index([tableId])
+}
+
+model Cell{
+    id          String      @id @default(uuid())
+    value       Json
+    createdAt   DateTime @default(now())
+
+    row        Row      @relation(fields: [rowId], references: [id])
+    column     Column      @relation(fields: [columnId], references: [id])
+    columnId      String
+    rowId      String
+    @@unique([columnId, rowId])
+    @@index([columnId])
+}
+
+model View{
+    id          String      @id @default(uuid())
+    name        String
+    createdAt   DateTime @default(now())
+
+    table        Table      @relation(fields: [tableId], references: [id])
+    tableId      String
+    filters     Filter[]
+    sorts       Sort[]
+    @@index([name])
+    @@unique([name, tableId])
+}
+
+model Filter{
+    id          String      @id @default(uuid())
+    createdAt   DateTime @default(now())
+    value       String
+    operator    OperatorType
+
+    view        View      @relation(fields: [viewId], references: [id])
+    viewId      String
+    column       Column     @relation(fields: [columnId], references: [id])
+    columnId     String
+    @@index([viewId]) 
+    @@index([columnId])
+}   
+
+model Sort{
+    id          String      @id @default(uuid())
+    direction        SortDirection
+    weight      Int
+
+    view        View      @relation(fields: [viewId], references: [id])
+    viewId      String
+    column       Column      @relation(fields: [columnId], references: [id])
+    columnId     String
+    @@index([viewId]) 
+}
