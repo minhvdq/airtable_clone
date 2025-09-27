@@ -8,7 +8,7 @@ import CombinedProviders from "./provider";
 export const metadata: Metadata = {
   title: "Airtable",
   description: "Rep 1:1 Airtable",
-  icons: [{ rel: "icon", url: "/Airtable-Logo.png" }],
+  icons: [{ rel: "icon", url: "/airtable-logo-notext.webp" }],
 };
 
 const geist = Geist({

@@ -13,8 +13,49 @@ export default function MainPage() {
     const [bases, setBases] = useState(fetchedBases);
     const [newBaseName, setNewBaseName] = useState("");
 
-    
+    const utils = api.useUtils();
+    const deleteBase = api.base.delete.useMutation();
+    const renameBase = api.base.rename.useMutation();
+    const renameWorkspace = api.workspace.rename.useMutation();
+    const deleteWorkspace = api.workspace.delete.useMutation();
     console.log("bases:", JSON.stringify(fetchedBases))
+
+    const handleDeleteBase = async (id: string) => {
+        try {
+            await deleteBase.mutateAsync({id});
+            setBases(bases.filter(base => base.id !== id));
+            // Invalidate queries to sync across all components
+            await utils.base.getAllForUser.invalidate();
+        } catch (err) {
+            console.error("Failed to delete base:", err);
+        }
+    }
+
+    const handleRenameBase = async (id: string, name: string) => {
+        try {
+            await renameBase.mutateAsync({id, name});
+            setBases(bases.map(base => base.id === id ? { ...base, name } : base));
+            // Invalidate queries to sync across all components
+            await utils.base.getAllForUser.invalidate();
+        } catch (err) {
+            console.error("Failed to rename base:", err);
+        }
+    }
+
+    const handleDeleteWorkspace = async (id: string) => {
+        await deleteWorkspace.mutateAsync({id});
+        setWorkspaces(workspaces.filter((workspace) => workspace.id !== id));
+        // Invalidate queries to sync across all components
+        await utils.workspace.getAllForUser.invalidate();
+        await utils.base.getAllForUser.invalidate(); // Also invalidate bases since workspace deletion affects them
+    }
+    
+    const handleRenameWorkspace = async (id: string, name: string) => {
+        await renameWorkspace.mutateAsync({id, name});
+        setWorkspaces(workspaces.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace));
+        // Invalidate queries to sync across all components
+        await utils.workspace.getAllForUser.invalidate();
+    }
 
     return (
         <>
@@ -32,8 +73,8 @@ export default function MainPage() {
 
                     {/* Cards grid */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {bases.map((base) => (
-                            <BaseCard key={base.id} base={base} />
+                            {bases.map((base) => (
+                                <BaseCard key={base.id} base={base} deleteBase={handleDeleteBase} renameBase={handleRenameBase} />
                         ))}
                     </div>
                 </div>

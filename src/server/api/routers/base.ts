@@ -43,7 +43,7 @@ export const baseRouter = createTRPCRouter({
         return base ?? null;
     }),
 
-    update: protectedProcedure
+    rename: protectedProcedure
         .input(z.object({id: z.string().min(1), name: z.string().min(1)}))
         .mutation(async ({ctx, input}) => {
             const base = await ctx.db.base.update({
@@ -52,6 +52,15 @@ export const baseRouter = createTRPCRouter({
             })
             return base ?? null;
         }),
+    moveToWorkspace: protectedProcedure
+    .input(z.object({id: z.string().min(1), workspaceId: z.string().min(1)}))
+    .mutation(async ({ctx, input}) => {
+        const base = await ctx.db.base.update({
+            where: {id: input.id},
+            data: {workspaceId: input.workspaceId}
+        })
+        return base ?? null;
+    }),
 
     open: protectedProcedure
     .input(z.object({id: z.string().min(1)}))
@@ -60,6 +69,13 @@ export const baseRouter = createTRPCRouter({
             where: {id: input.id},
             data: {lastOpenAt: new Date()}
         })
+        return base ?? null;
+    }),
+
+    delete: protectedProcedure
+    .input(z.object({id: z.string().min(1)}))
+    .mutation(async ({ctx, input}) => {
+        const base = await ctx.db.base.delete({where: {id: input.id}})
         return base ?? null;
     })
 })

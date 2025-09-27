@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "~/server/auth";
 import { api, HydrateClient } from "~/trpc/server";
-import MainPage from "./_components/home/MainPage";
+import WorkspacesPage from "~/app/_components/Workspaces/WorspacesPage";
 
 export default async function Home() {
   const session = await auth();
@@ -15,7 +15,7 @@ export default async function Home() {
 
   return (
     <HydrateClient>
-      <MainPage />
+        <WorkspacesPage />
     </HydrateClient>
   );
 }

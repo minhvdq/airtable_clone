@@ -1,9 +1,10 @@
 "use client"
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { Base, Workspace } from "@prisma/client";
 import { useSession, signOut } from "next-auth/react";  
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { api } from "~/trpc/react";
 
 type TaskBarProps = {
@@ -18,21 +19,91 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
     void bases; void workspaces; void setBases; void setWorkspaces;
 
     const { data: session } = useSession();
+    const router = useRouter();
 
+    const utils = api.useUtils();
     const createWorkspace = api.workspace.create.useMutation();
     const createBase      = api.base.create.useMutation();
+    const deleteWorkspace = api.workspace.delete.useMutation();
+    const renameWorkspace = api.workspace.rename.useMutation();
+
+    const handleDeleteWorkspace = async (id: string) => {
+        await deleteWorkspace.mutateAsync({id});
+        setWorkspaces(workspaces.filter((workspace) => workspace.id !== id));
+        // Invalidate queries to sync across all components
+        await utils.workspace.getAllForUser.invalidate();
+        await utils.base.getAllForUser.invalidate(); // Also invalidate bases since workspace deletion affects them
+    }
+    
+    const handleRenameWorkspace = async (id: string, name: string) => {
+        await renameWorkspace.mutateAsync({id, name});
+        setWorkspaces(workspaces.map((workspace) => workspace.id === id ? { ...workspace, name } : workspace));
+        // Invalidate queries to sync across all components
+        await utils.workspace.getAllForUser.invalidate();
+    }
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showWorkspaces, setShowWorkspaces] = useState(true);
     const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
     const [showCreatePanel, setShowCreatePanel] = useState(false);
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [activeWorkspaceModal, setActiveWorkspaceModal] = useState<string | null>(null);
+    const [isRenamingWorkspace, setIsRenamingWorkspace] = useState(false);
+    const [renamingWorkspaceId, setRenamingWorkspaceId] = useState<string | null>(null);
+    const [newWorkspaceName, setNewWorkspaceName] = useState("");
+    const [showDeleteWorkspaceConfirm, setShowDeleteWorkspaceConfirm] = useState(false);
+    const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
+    const workspaceModalRef = useRef<HTMLDivElement>(null);
 
     console.log(JSON.stringify(session));
+    console.log('Active workspace modal:', activeWorkspaceModal);
+    console.log('Show workspaces:', showWorkspaces);
+    console.log('Workspaces count:', workspaces.length);
 
     const email = session?.user?.email ?? "User";
     const name = session?.user?.name ?? "User";
     const initial = name[0] ?? "U";
+
+    // Close modals when clicking outside - temporarily disabled for debugging
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (activeWorkspaceModal && workspaceModalRef.current && !workspaceModalRef.current.contains(event.target as Node)) {
+                console.log('Closing workspace modal due to outside click');
+                setActiveWorkspaceModal(null);
+            }
+        };
+
+        if (activeWorkspaceModal) {
+            // Add a small delay to prevent immediate closure
+            setTimeout(() => {
+                document.addEventListener('mousedown', handleClickOutside);
+            }, 100);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [activeWorkspaceModal]);
+
+    // Handle workspace renaming
+    const handleWorkspaceRename = async () => {
+        if (renamingWorkspaceId && newWorkspaceName.trim()) {
+            void handleRenameWorkspace(renamingWorkspaceId, newWorkspaceName.trim());
+            setIsRenamingWorkspace(false);
+            setRenamingWorkspaceId(null);
+            setNewWorkspaceName("");
+        }
+    };
+
+    const handleWorkspaceKeyPress = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            void handleWorkspaceRename();
+        } else if (e.key === 'Escape') {
+            setIsRenamingWorkspace(false);
+            setRenamingWorkspaceId(null);
+            setNewWorkspaceName("");
+        }
+    };
 
     const handleAddBase = async (e: React.MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -40,6 +111,8 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
             if (!selectedWorkspaceId) return;
             const newBase: Base = await createBase.mutateAsync({ name: "Untitled Base", workspaceId: selectedWorkspaceId });
             setBases([...bases, newBase].sort((a, b) => b.lastOpenAt.getTime() - a.lastOpenAt.getTime()));
+            // Invalidate queries to sync across all components
+            await utils.base.getAllForUser.invalidate();
         }catch (err: unknown){
             if (err instanceof Error) {
                 console.error(err.message);
@@ -54,6 +127,8 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
         try{
             const newWorkspace: Workspace = await createWorkspace.mutateAsync({ name: "Workspace" });
             setWorkspaces([...workspaces, newWorkspace]);
+            // Invalidate queries to sync across all components
+            await utils.workspace.getAllForUser.invalidate();
         }catch (err: unknown){
             if (err instanceof Error) {
                 console.error(err.message);
@@ -74,11 +149,18 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
                 // create base second
                 const newBase: Base = await createBase.mutateAsync({ name: "Untitled Base", workspaceId: newWorkspace.id });
                 setBases([...bases, newBase].sort((a, b) => b.lastOpenAt.getTime() - a.lastOpenAt.getTime()));
+                
+                // Invalidate queries to sync across all components
+                await utils.workspace.getAllForUser.invalidate();
+                await utils.base.getAllForUser.invalidate();
             }else if(workspaces.length === 1){
                 const onlyWorkspace = workspaces[0];
                 if (!onlyWorkspace) return;
                 const newBase: Base = await createBase.mutateAsync({ name: "Untitled Base", workspaceId: onlyWorkspace.id });
                 setBases([...bases, newBase].sort((a, b) => b.lastOpenAt.getTime() - a.lastOpenAt.getTime()));
+                
+                // Invalidate queries to sync across all components
+                await utils.base.getAllForUser.invalidate();
             }else{
                 setSelectedWorkspaceId(null);
                 setShowCreatePanel((v) => !v);
@@ -139,7 +221,7 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
     return (
         <div className="h-full">
             {/* Top Navigation Bar */}
-            <div className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-gray-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/70">
+            <div className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-gray-200 bg-white">
                 <div className="mx-auto flex h-full max-w-screen-2xl items-center justify-between px-4">
                     {/* Left cluster: logo + product switcher */}
                     <div className="flex items-center gap-3">
@@ -227,7 +309,10 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
                 <aside className="h-full w-14 border-r border-gray-200 bg-white">
                     <div className="flex h-full flex-col items-center py-3">
                         {/* Top icons */}
-                        <button className="mb-2 flex h-9 w-9 items-center justify-center rounded-md hover:bg-gray-100">
+                        <button 
+                            onClick={() => router.push("/")}
+                            className="mb-2 flex h-9 w-9 items-center justify-center rounded-md hover:bg-gray-100"
+                        >
                             <Image src="/hut.png" alt="Home" width={16} height={16} className="opacity-90" />
                         </button>
                         <button className="mb-2 flex h-9 w-9 items-center justify-center rounded-md hover:bg-gray-100">
@@ -259,7 +344,10 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
                         {/* Primary */}
                         <nav className="space-y-1">
                             {/* Home */}
-                            <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                            <button 
+                                onClick={() => router.push("/")}
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                            >
                                 <Image src="/hut.png" alt="Home" width={16} height={16} className="opacity-90" />
                                 <span className="whitespace-nowrap">Home</span>
                             </button>
@@ -274,7 +362,10 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
                                 <span className="whitespace-nowrap">Share</span>
                             </button>
                             <div className="mb-1 flex items-center justify-between px-1">
-                                <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+                                <button 
+                                    onClick={() => router.push("/workspaces")}
+                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+                                >
                                    <Image src="/people.png" alt="Workspaces" width={16} height={16} className="opacity-90" />
                                    <span className="whitespace-nowrap">Workspaces</span>
                                 </button>
@@ -316,11 +407,121 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
                         </div> */}
                         <div className={`flex-1 space-y-1 overflow-y-auto transition-[max-height,opacity] duration-200 ease-out ${showWorkspaces ? "max-h-[999px] opacity-100" : "max-h-0 opacity-0"}`}>
                             {workspaces.map((workspace) => (
-                                <button key={workspace.id} className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">
+                                <div key={workspace.id} className="relative flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 group">
                                     <Image src="/people.png" alt="Workspace" width={16} height={16} className="opacity-90" />
-                                    <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-                                    <span className="text-xs text-gray-400">›</span>
-                                </button>
+                                    {isRenamingWorkspace && renamingWorkspaceId === workspace.id ? (
+                                        <input
+                                            type="text"
+                                            value={newWorkspaceName}
+                                            onChange={(e) => setNewWorkspaceName(e.target.value)}
+                                            onKeyDown={handleWorkspaceKeyPress}
+                                            onBlur={handleWorkspaceRename}
+                                            className="min-w-0 flex-1 bg-transparent border-none outline-none focus:ring-0 p-0 text-sm"
+                                            autoFocus
+                                        />
+                                    ) : (
+                                        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+                                    )}
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-xs text-gray-400">›</span>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                console.log('Workspace modal button clicked for:', workspace.id);
+                                                setActiveWorkspaceModal(workspace.id);
+                                            }}
+                                            className="opacity-0 group-hover:opacity-100 flex h-5 w-5 items-center justify-center rounded hover:bg-gray-200 transition-opacity"
+                                        >
+                                            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="1"/>
+                                                <circle cx="19" cy="12" r="1"/>
+                                                <circle cx="5" cy="12" r="1"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Workspace Modal */}
+                                    {activeWorkspaceModal === workspace.id && (
+                                        <div ref={workspaceModalRef} className="absolute right-0 top-12 z-50" role="dialog" aria-modal="true">
+                                            <div className="w-48 rounded-lg border border-gray-200 bg-white shadow-xl">
+                                                <div className="py-1">
+                                                    <button
+                                                        onClick={() => {
+                                                            setActiveWorkspaceModal(null);
+                                                            setIsRenamingWorkspace(true);
+                                                            setRenamingWorkspaceId(workspace.id);
+                                                            setNewWorkspaceName(workspace.name);
+                                                        }}
+                                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                                    >
+                                                        <svg className="h-4 w-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                                            <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                                        </svg>
+                                                        <span>Rename workspace</span>
+                                                    </button>
+                                                </div>
+                                                <div className="border-t border-gray-200"></div>
+                                                <div className="py-1">
+                                                    <button
+                                                        onClick={() => {
+                                                            setActiveWorkspaceModal(null);
+                                                            setShowDeleteWorkspaceConfirm(true);
+                                                            setDeletingWorkspaceId(workspace.id);
+                                                        }}
+                                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                                    >
+                                                        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="3,6 5,6 21,6"/>
+                                                            <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"/>
+                                                            <line x1="10" y1="11" x2="10" y2="17"/>
+                                                            <line x1="14" y1="11" x2="14" y2="17"/>
+                                                        </svg>
+                                                        <span>Delete workspace</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Delete Workspace Confirmation Modal */}
+                                    {showDeleteWorkspaceConfirm && deletingWorkspaceId === workspace.id && (
+                                        <div className="absolute right-0 top-12 z-[60]" role="dialog" aria-modal="true">
+                                            <div className="w-48 h-36 rounded-lg border border-gray-200 bg-white p-3 shadow-xl">
+                                                <h3 className="mb-1 text-sm font-semibold text-gray-900">
+                                                    Are you sure you want to delete {workspace.name}?
+                                                </h3>
+                                                <p className="mb-4 text-xs text-gray-600">
+                                                    Recently deleted workspaces can be restored from trash.
+                                                    <button className="ml-1 inline-flex h-3 w-3 items-center justify-center rounded-full bg-gray-100 text-[10px] text-gray-500 hover:bg-gray-200">
+                                                        ?
+                                                    </button>
+                                                </p>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setShowDeleteWorkspaceConfirm(false);
+                                                            setDeletingWorkspaceId(null);
+                                                        }}
+                                                        className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleDeleteWorkspace(workspace.id);
+                                                            setShowDeleteWorkspaceConfirm(false);
+                                                            setDeletingWorkspaceId(null);
+                                                        }}
+                                                        className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             ))}
                         </div>
 
