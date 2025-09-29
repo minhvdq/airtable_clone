@@ -1,45 +1,39 @@
 "use client"
 
-import { useSelectedBaseStore } from '~/stores/selectedBaseStore';
 import { useRouter } from 'next/navigation';
-import React, { useEffect } from 'react';
+import React, { useEffect, use } from 'react';
 import { api } from '~/trpc/react';
-import TableTaskbar from '../../_components/table/TableTaskbar';
+import { useTableNavigationStore } from '~/stores/tableNavigationStore';
 
-export default function TablePage({ params }: { params: { id: string } }) {
-    const { selectedBase, hasSelectedBase } = useSelectedBaseStore();
-    // const opeBase = api.base.open.useQuery({ id: selectedBase?.id ?? "1" });
+export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
+    const resolvedParams = use(params);
     const router = useRouter();
-    
-    // Get the table ID from the URL params
-    // const tableId = params.id
-    // console.log("tableId", tableId)
-    
-    // Redirect to home if no base is selected
+    const tableId = resolvedParams.id;
+    const { setNavigation } = useTableNavigationStore();
+
+    // Fetch views for this table to get the first view
+    const viewsQuery = api.view.getAllForTable.useQuery({ tableId }, { enabled: !!tableId });
+
+    // Redirect to the first view when views are loaded
     useEffect(() => {
-        if (!hasSelectedBase()) {
-            console.log('No base selected, redirecting to home');
+        if (viewsQuery.data && viewsQuery.data.length > 0) {
+            const firstView = viewsQuery.data[0];
+            if (firstView?.id) {
+                // Update navigation state
+                setNavigation(tableId, firstView.id, firstView.table?.baseId ?? '');
+                router.replace(`/table/${tableId}/${firstView.id}`);
+            }
+        } else if (viewsQuery.isSuccess && viewsQuery.data?.length === 0) {
+            // If no views exist, redirect to home
+            console.log('No views found for table, redirecting to home');
             router.push('/');
         }
-        api.base.open.useMutation({
-            onSuccess: () => {
-                console.log('Base opened');
-            }
-        });
-        
-    }, [hasSelectedBase, router]);
+    }, [viewsQuery.data, viewsQuery.isSuccess, router, tableId, setNavigation]);
 
-
+    // Show loading state while fetching views
     return (
-        <>
-            <TableTaskbar />
-            
-            {/* Main Content */}
-            <main className="w-full pl-14 pr-10 pt-14 min-h-[calc(100vh-3.5rem)] bg-[#fbfbfd]">
-                <div className="mx-auto max-w-screen-2xl px-6 py-6">
-                    
-                </div>
-            </main>
-        </>
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="text-gray-600">Loading...</div>
+        </div>
     );
 }

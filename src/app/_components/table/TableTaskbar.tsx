@@ -1,5 +1,6 @@
 "use client"
 import Image from "next/image"
+import Link from "next/link"
 import { useSession, signOut } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
 import { useSelectedBaseStore } from '~/stores/selectedBaseStore';
@@ -8,6 +9,7 @@ export default function TableTaskbar() {
     const { data: session } = useSession();
     const { selectedBase } = useSelectedBaseStore();
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [isLogoHovered, setIsLogoHovered] = useState(false);
     const userMenuRef = useRef<HTMLDivElement>(null);
 
     const email = session?.user?.email ?? "User";
@@ -99,17 +101,40 @@ export default function TableTaskbar() {
             </div>
 
             {/* Left Sidebar */}
-            <div className="fixed left-0 top-0 z-50 h-screen w-14 bg-white border-r border-gray-200 flex flex-col items-center py-4">
-                {/* Logo at top */}
-            <div className="mb-8">
-                <Image 
-                    src="/airtable-black.svg" 
-                    alt="Airtable Logo"
-                    width={22} 
-                    height={22}
-                    className="object-contain"
-                />
-            </div>
+            <div className="fixed left-0 top-0 z-50 h-screen w-14 bg-white border-r border-gray-200 flex flex-col items-center py-3">
+                {/* Logo at top with hover effect */}
+                <div className="mb-8">
+                    <Link 
+                        href="/"
+                        className="flex items-center justify-center w-8 h-8 rounded transition-colors duration-200"
+                        onMouseEnter={() => setIsLogoHovered(true)}
+                        onMouseLeave={() => setIsLogoHovered(false)}
+                    >
+                        {isLogoHovered ? (
+                            // Back arrow when hovered
+                            <svg 
+                                className="w-4 h-4 text-gray-700" 
+                                viewBox="0 0 24 24" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                strokeWidth="2" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round"
+                            >
+                                <path d="M19 12H5M12 19l-7-7 7-7"/>
+                            </svg>
+                        ) : (
+                            // Original logo when not hovered
+                            <Image 
+                                src="/airtable-black.svg" 
+                                alt="Airtable Logo"
+                                width={22} 
+                                height={22}
+                                className="object-contain"
+                            />
+                        )}
+                    </Link>
+                </div>
 
             {/* Spacer to push buttons to bottom */}
             <div className="flex-1" />

@@ -2,10 +2,40 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const viewRouter = createTRPCRouter({
+    getById: protectedProcedure
+        .input(z.object({ id: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const view = await ctx.db.view.findUnique({ 
+                where: { id: input.id },
+                include: {
+                    filters: true,
+                    sorts: true,
+                    table: {
+                        include: {
+                            columns: true,
+                            rows: {
+                                include: {
+                                    cells: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            return view;
+        }),
+
     getAllForTable: protectedProcedure
         .input(z.object({ tableId: z.string() }))
         .query(async ({ ctx, input }) => {
-            const views = await ctx.db.view.findMany({ where: { tableId: input.tableId } });
+            const views = await ctx.db.view.findMany({ 
+                where: { tableId: input.tableId },
+                include: {
+                    filters: true,
+                    sorts: true,
+                    table: true
+                }
+            });
             return views;
         }),
 

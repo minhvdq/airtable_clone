@@ -5,9 +5,19 @@ import {
     protectedProcedure,
 } from '~/server/api/trpc'
 
-import { api } from '~/trpc/server'
-
 export const baseRouter = createTRPCRouter({
+    getById: protectedProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .query(async ({ ctx, input }) => {
+            const base = await ctx.db.base.findFirst({
+                where: {
+                    id: input.id,
+                    createdBy: { id: ctx.session.user.id }
+                }
+            });
+            return base ?? null;
+        }),
+
     getAllForUser: protectedProcedure.query(async ({ctx}) => {
         const bases = await ctx.db.base.findMany({
             where: {createdBy: {id: ctx.session.user.id}},
@@ -42,11 +52,19 @@ export const baseRouter = createTRPCRouter({
                 lastOpenAt: new Date()
             }
         })
-        await ctx.db.table.create({
+        const table = await ctx.db.table.create({
             data: {
                 name: "Table 1",
                 baseId: base.id,
                 createdById: ctx.session.user.id
+            }
+        })
+        
+        // Create a default view for the table
+        await ctx.db.view.create({
+            data: {
+                name: "Grid view",
+                tableId: table.id
             }
         })
         return base ?? null;

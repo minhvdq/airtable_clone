@@ -25,6 +25,7 @@ export const tableRouter = createTRPCRouter({
         .input(z.object({ baseId: z.string(), name: z.string() }))
         .mutation(async ({ ctx, input }) => {
             const table = await ctx.db.table.create({ data: { baseId: input.baseId, name: input.name, createdById: ctx.session.user.id } });
+            await ctx.db.view.create({ data: { name: "Grid view", tableId: table.id } });
             return table;
         }),
 
