@@ -1,9 +1,10 @@
 "use client"
 
-import React, { useEffect, use } from 'react';
+import React, { useEffect, use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '~/trpc/react';
 import { useTableNavigationStore } from '~/stores/tableNavigationStore';
+import { type Filter, type Sort, type Column, type Row, type Cell, type Table, type View } from '@prisma/client';
 
 export default function ViewPage({ params }: { params: Promise<{ id: string; viewId: string }> }) {
     const resolvedParams = use(params);
@@ -11,6 +12,15 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
     const tableId = resolvedParams.id;
     const viewId = resolvedParams.viewId;
     const { setNavigation } = useTableNavigationStore();
+    
+    // Hook states for all data
+    const [view, setView] = useState<View | null>(null);
+    const [table, setTable] = useState<Table | null>(null);
+    const [baseId, setBaseId] = useState<string | null>(null);
+    const [filters, setFilters] = useState<Array<Filter>>([]);
+    const [sorts, setSorts] = useState<Array<Sort>>([]);
+    const [rows, setRows] = useState<Array<Row>>([]);
+    const [columns, setColumns] = useState<Array<Column>>([]);
 
     // Fetch the view with all related data (optimized single query)
     const viewQuery = api.view.getById.useQuery({ id: viewId }, { 
@@ -18,18 +28,27 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 10 * 60 * 1000, // 10 minutes
     });
-    const view = viewQuery.data;
 
-    // Extract table and base data from the view query
-    const table = view?.table ?? null;
-    const baseId = table?.baseId ?? null;
-
-    // Update navigation state when data is loaded
+    // Update navigation state and hook states when data is loaded
     useEffect(() => {
-        if (view && table && baseId) {
-            setNavigation(tableId, viewId, baseId);
+        if (viewQuery.data) {
+            const viewData = viewQuery.data;
+            
+            // Update all hook states
+            setView(viewData);
+            setTable(viewData.table ?? null);
+            setBaseId(viewData.table?.baseId ?? null);
+            setFilters(viewData.filters ?? []);
+            setSorts(viewData.sorts ?? []);
+            setColumns(viewData.table?.columns ?? []);
+            setRows(viewData.table?.rows ?? []);
+            
+            // Update navigation state
+            if (viewData.table?.baseId) {
+                setNavigation(tableId, viewId, viewData.table.baseId);
+            }
         }
-    }, [view, table, baseId, tableId, viewId, setNavigation]);
+    }, [viewQuery.data, tableId, viewId, setNavigation]);
 
     // Handle redirects when data is not found
     useEffect(() => {
@@ -40,15 +59,15 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
         }
 
         // Only redirect if the query has finished with no data
-        if (viewQuery.isSuccess && !view) {
+        if (viewQuery.isSuccess && !viewQuery.data) {
             console.log('No view found, redirecting to home');
             router.push('/');
             return;
         }
-    }, [tableId, viewId, view, router, viewQuery.isSuccess]);
+    }, [tableId, viewId, router, viewQuery.isSuccess, viewQuery.data]);
 
     // Show loading state while fetching data
-    if (viewQuery.isLoading) {
+    if (viewQuery.isLoading || !viewQuery.data) {
         return (
             <div className="flex items-center justify-center py-20">
                 <div className="text-gray-600">Loading view data...</div>
@@ -56,8 +75,8 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
         );
     }
 
-    // Show error state if no data found
-    if (!view || !table) {
+    // Show error state if no data found after loading
+    if (viewQuery.isSuccess && !viewQuery.data) {
         return (
             <div className="flex items-center justify-center py-20">
                 <div className="text-red-600">View not found</div>
@@ -65,70 +84,8 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
         );
     }
 
-    // Extract view-specific data for display
-    const filters = view?.filters ?? [];
-    const sorts = view?.sorts ?? [];
-    const columns = table?.columns ?? [];
-    const rows = table?.rows ?? [];
-
     return (
-        <div className="bg-white rounded-lg shadow-sm border">
-            <div className="p-4 border-b">
-                <h2 className="text-xl font-semibold text-gray-800">
-                    {view.name} - {table.name}
-                </h2>
-                <p className="text-sm text-gray-600 mt-1">
-                    {columns.length} columns, {rows.length} rows
-                    {filters.length > 0 && `, ${filters.length} filters`}
-                    {sorts.length > 0 && `, ${sorts.length} sorts`}
-                </p>
-            </div>
-            
-            {/* View data display */}
-            <div className="p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <h3 className="font-medium text-gray-700 mb-2">Columns</h3>
-                        <div className="space-y-1">
-                            {columns.map(column => (
-                                <div key={column.id} className="text-sm text-gray-600">
-                                    {column.name} ({column.type})
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <h3 className="font-medium text-gray-700 mb-2">Filters</h3>
-                        <div className="space-y-1">
-                            {filters.length > 0 ? (
-                                filters.map(filter => (
-                                    <div key={filter.id} className="text-sm text-gray-600">
-                                        {filter.columnId}: {filter.operator} {filter.value}
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="text-sm text-gray-400">No filters applied</div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="mt-4">
-                    <h3 className="font-medium text-gray-700 mb-2">Sorts</h3>
-                    <div className="space-y-1">
-                        {sorts.length > 0 ? (
-                            sorts.map(sort => (
-                                <div key={sort.id} className="text-sm text-gray-600">
-                                    {sort.columnId}: {sort.direction}
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-sm text-gray-400">No sorts applied</div>
-                        )}
-                    </div>
-                </div>
-            </div>
+        <div>
         </div>
     );
 }

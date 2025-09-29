@@ -131,7 +131,7 @@ export default function SignInPage() {
           </div>
 
           {/* --- Footer Link (Matches Airtable's style) --- */}
-          <div className="mt-20 text-base text-gray-700 text-center lg:text-left">
+          <div className="mt-16 text-base text-gray-700 text-center lg:text-left">
             New to Airtable?{" "}
             <Link 
               href="#" 
