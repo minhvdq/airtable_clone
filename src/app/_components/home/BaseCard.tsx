@@ -5,8 +5,10 @@ import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useSelectedBaseStore } from '~/stores/selectedBaseStore'
+import { api } from "~/trpc/react";
 
 export default function BaseCard({ base, deleteBase, renameBase }: { base: Base, deleteBase: (id: string) => void, renameBase: (id: string, name: string) => void }) {
+    const tables = api.table.getAllForBase.useQuery({ baseId: base.id }).data ?? [];
     const [showModal, setShowModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isRenaming, setIsRenaming] = useState(false);
@@ -96,10 +98,12 @@ export default function BaseCard({ base, deleteBase, renameBase }: { base: Base,
     };
 
     // Handle base card click to navigate to table
-    const handleBaseClick = () => {
+    const handleBaseClick = async () => {
         console.log('Base clicked:', base.name);
+        const tableId = tables?.[0]?.id ?? "";
+        console.log("id", tableId)
         setSelectedBase(base);
-        router.push('/table');
+        router.push(`/table/${tableId}`);
     };
 
     // Focus input when renaming starts

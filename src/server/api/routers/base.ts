@@ -5,6 +5,8 @@ import {
     protectedProcedure,
 } from '~/server/api/trpc'
 
+import { api } from '~/trpc/server'
+
 export const baseRouter = createTRPCRouter({
     getAllForUser: protectedProcedure.query(async ({ctx}) => {
         const bases = await ctx.db.base.findMany({
@@ -38,6 +40,13 @@ export const baseRouter = createTRPCRouter({
                 workspaceId: input.workspaceId, 
                 createdById: ctx.session.user.id,
                 lastOpenAt: new Date()
+            }
+        })
+        await ctx.db.table.create({
+            data: {
+                name: "Table 1",
+                baseId: base.id,
+                createdById: ctx.session.user.id
             }
         })
         return base ?? null;

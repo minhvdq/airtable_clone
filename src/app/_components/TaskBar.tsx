@@ -223,7 +223,7 @@ export default function TaskBar({ bases, workspaces, setBases, setWorkspaces }: 
             {/* Top Navigation Bar */}
             <div className="fixed top-0 left-0 right-0 z-50 h-14 border-b border-gray-200 bg-white">
                 <div className="mx-auto flex h-full max-w-screen-2xl items-center justify-between px-4">
-                    {/* Left cluster: logo + product switcher */}
+                {/* Left cluster: logo + product switcher */}
                     <div className="flex items-center gap-3">
                         <button
                             aria-label="Toggle sidebar"

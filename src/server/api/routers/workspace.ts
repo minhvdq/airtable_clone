@@ -38,12 +38,7 @@ export const workspaceRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({id: z.string().min(1)}))
     .mutation(async ({ctx, input}) => {
-    // First, delete all bases in this workspace
-    await ctx.db.base.deleteMany({
-      where: {workspaceId: input.id}
-    });
     
-    // Then delete the workspace
     const workspace = await ctx.db.workspace.delete({
       where: {id: input.id}
     });
