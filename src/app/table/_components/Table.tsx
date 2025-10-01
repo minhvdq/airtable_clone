@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { type View, type Table } from "@prisma/client";
 import { api } from "~/trpc/react";
 import { ColumnType } from '@prisma/client';
@@ -37,6 +37,7 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
   const createColumnAPI = api.column.create.useMutation();
   const createRowAPI = api.row.create.useMutation();
   const createCellAPI = api.cell.create.useMutation();
+  const updateCellAPI = api.cell.update.useMutation();
 
   const fcolumns = useMemo(() => getColumns.data ?? [], [getColumns.data]);
   const frows = useMemo(() => getRows.data ?? [], [getRows.data]);
@@ -54,6 +55,9 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
   
   // Cell selection state
   const [selectedCell, setSelectedCell] = useState<{rowIndex: number, columnIndex: number} | null>(null);
+  const [editingCell, setEditingCell] = useState<{rowIndex: number, columnIndex: number} | null>(null);
+  const [editingValue, setEditingValue] = useState<string>('');
+  const [cellError, setCellError] = useState<string>('');
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Table state management with fetched data
@@ -114,18 +118,151 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
     };
   }, [showAddColumnModal]);
 
+  // Cell editing functions
+  const validateCellValue = (value: string, columnType: string): boolean => {
+    if (columnType === 'number') {
+      if (value === '' || value === null || value === undefined) return true; // Allow empty
+      const num = Number(value);
+      return !isNaN(num) && isFinite(num);
+    }
+    return true; // String type always valid
+  }
+
+  const handleCellEdit = useCallback(async (newValue: string) => {
+    if (!editingCell) return;
+    
+    const { rowIndex, columnIndex } = editingCell;
+    const column = columns[columnIndex];
+    const row = rows[rowIndex];
+    
+    if (!column || !row) return;
+
+    // Validate the value
+    if (!validateCellValue(newValue, column.type)) {
+      setCellError('Please enter a number');
+      return;
+    }
+
+    setCellError('');
+    
+    // Update client state immediately (optimistic update)
+    setRows(prevRows => 
+      prevRows.map((r, idx) => 
+        idx === rowIndex 
+          ? { ...r, [column.id]: column.type === 'number' ? (newValue === '' ? '' : Number(newValue)) : newValue } as TableRow
+          : r
+      )
+    );
+
+    // Find the cell to update
+    const cellToUpdate = allCells.find(cell => 
+      cell.rowId === row.id && cell.columnId === column.id
+    );
+
+    if (cellToUpdate) {
+      // Update existing cell
+      try {
+        await updateCellAPI.mutateAsync({
+          id: cellToUpdate.id,
+          value: String(column.type === 'number' ? (newValue === '' ? '' : Number(newValue)) : newValue)
+        });
+      } catch (error) {
+        console.error('Error updating cell:', error);
+        // Revert optimistic update on error
+        setRows(prevRows => 
+          prevRows.map((r, idx) => 
+            idx === rowIndex 
+              ? { ...r, [column.id]: cellToUpdate.value } as TableRow
+              : r
+          )
+        );
+      }
+    } else {
+      // Create new cell if it doesn't exist
+      try {
+        await createCellAPI.mutateAsync({
+          rowId: row.id,
+          columnId: column.id,
+          value: String(column.type === 'number' ? (newValue === '' ? '' : Number(newValue)) : newValue)
+        });
+      } catch (error) {
+        console.error('Error creating cell:', error);
+        // Revert optimistic update on error
+        setRows(prevRows => 
+          prevRows.map((r, idx) => 
+            idx === rowIndex 
+              ? { ...r, [column.id]: '' } as TableRow
+              : r
+          )
+        );
+      }
+    }
+
+    setEditingCell(null);
+    setEditingValue('');
+  }, [editingCell, columns, rows, allCells, updateCellAPI, createCellAPI]);
+
+  const moveToNextCell = useCallback((direction: 'down' | 'right') => {
+    if (!editingCell) return;
+    
+    const { rowIndex, columnIndex } = editingCell;
+    let newRowIndex = rowIndex;
+    let newColumnIndex = columnIndex;
+
+    if (direction === 'down') {
+      newRowIndex = Math.min(rows.length - 1, rowIndex + 1);
+    } else {
+      newColumnIndex = Math.min(columns.length - 1, columnIndex + 1);
+    }
+
+    setEditingCell({ rowIndex: newRowIndex, columnIndex: newColumnIndex });
+    setSelectedCell({ rowIndex: newRowIndex, columnIndex: newColumnIndex });
+    
+    const newColumn = columns[newColumnIndex];
+    const newRow = rows[newRowIndex];
+    if (newColumn && newRow) {
+      const currentValue = newRow[newColumn.id] ?? '';
+      setEditingValue(String(currentValue));
+    }
+    setCellError('');
+  }, [editingCell, rows, columns]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // If we're editing a cell, handle editing-specific keys
+      if (editingCell) {
+        switch (e.key) {
+        case 'Enter':
+          e.preventDefault();
+          void handleCellEdit(editingValue);
+          moveToNextCell('down');
+          return;
+        case 'Tab':
+          e.preventDefault();
+          void handleCellEdit(editingValue);
+          moveToNextCell('right');
+          return;
+          case 'Escape':
+            e.preventDefault();
+            setEditingCell(null);
+            setEditingValue('');
+            setCellError('');
+            return;
+        }
+        return; // Don't handle other keys when editing
+      }
+
+      // If we're not editing, handle navigation keys
       if (!selectedCell) return;
-      
+
       const { rowIndex, columnIndex } = selectedCell;
       const maxRow = rows.length - 1;
       const maxCol = columns.length - 1;
-      
+
       let newRowIndex = rowIndex;
       let newColumnIndex = columnIndex;
-      
+
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
@@ -164,6 +301,19 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
         case 'Escape':
           setSelectedCell(null);
           return;
+        // Start editing on any printable character
+        default:
+          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            const column = columns[columnIndex];
+            const row = rows[rowIndex];
+            if (column && row) {
+              setEditingCell({ rowIndex, columnIndex });
+              setEditingValue(e.key);
+              setCellError('');
+            }
+          }
+          return;
       }
       
       setSelectedCell({ rowIndex: newRowIndex, columnIndex: newColumnIndex });
@@ -178,7 +328,7 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
     return () => {
       document.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, [selectedCell, rows.length, columns.length]);
+  }, [selectedCell, editingCell, editingValue, rows.length, columns.length, rows, columns, handleCellEdit, moveToNextCell]);
 
   // Auto-scroll to selected cell when selection changes
   useEffect(() => {
@@ -320,6 +470,20 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
   const handleCellClick = (rowIndex: number, columnIndex: number) => {
     console.log('Cell clicked:', { rowIndex, columnIndex });
     setSelectedCell({ rowIndex, columnIndex });
+    setEditingCell(null);
+    setCellError('');
+  }
+
+  const handleCellDoubleClick = (rowIndex: number, columnIndex: number) => {
+    console.log('Cell double-clicked:', { rowIndex, columnIndex });
+    const column = columns[columnIndex];
+    const row = rows[rowIndex];
+    if (!column || !row) return;
+    
+    const currentValue = row[column.id] ?? '';
+    setEditingCell({ rowIndex, columnIndex });
+    setEditingValue(String(currentValue));
+    setCellError('');
   }
 
   const scrollToSelectedCell = (rowIndex: number, columnIndex: number) => {
@@ -397,7 +561,7 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
       id: 'counter',
       header: '',
       cell: ({ row }) => (
-        <div className="text-gray-500 text-sm font-mono w-8 text-center">
+        <div className="text-gray-500 text-xs font-mono w-8 text-center">
           {row.index + 1}
         </div>
       ),
@@ -439,7 +603,7 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
   });
 
     return (
-    <div className="h-full w-full bg-white flex flex-col">
+    <div className="h-full w-full bg-gray-100 flex flex-col">
       {/* Debug info */}
       {selectedCell && (
         <div className="bg-gray-100 p-2 text-xs text-gray-600 flex-shrink-0">
@@ -449,16 +613,16 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
       
       {/* Table Container with scrollable margins */}
       <div ref={tableContainerRef} className="flex-1 overflow-auto min-h-0">
-        <div className="pr-20 pb-20">
+        <div className="pr-32 pb-20">
           <table className="w-full min-w-max">
           {/* Table Header */}
-          <thead className="bg-gray-50 sticky top-0 z-10">
+          <thead className="bg-white sticky top-0 z-10 h-4">
             {tanstackTable.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200 last:border-r-0"
+                     className="px-3 py-2 text-left text-xs font-medium text-gray-500 border-r border-b border-gray-200 last:border-r-0"
                     style={{ width: header.getSize() }}
                   >
                     <div
@@ -529,7 +693,7 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
                           </div>
 
                           {/* Column Type Dropdown */}
-                          <div>
+        <div>
                             <select
                               value={newColumnType}
                               onChange={(e) => setNewColumnType(e.target.value as ColumnType)}
@@ -580,21 +744,77 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
                     console.log('Cell is selected:', { rowIndex, dataColumnIndex, selectedCell });
                   }
                   
+                  const isEditing = editingCell?.rowIndex === rowIndex && editingCell?.columnIndex === dataColumnIndex;
+                  const hasError = isEditing && cellError;
+                  const currentColumn = columns[dataColumnIndex];
+                  
                   return (
                     <td
                       key={cell.id}
                       onClick={() => isDataColumn && handleCellClick(rowIndex, dataColumnIndex)}
+                      onDoubleClick={() => isDataColumn && handleCellDoubleClick(rowIndex, dataColumnIndex)}
                       data-row-index={rowIndex}
                       data-column-index={dataColumnIndex}
-                      className={`px-4 py-3 text-sm text-gray-900 border-r border-gray-100 last:border-r-0 ${
+                      className={`px-3 py-2 text-xs text-gray-900 bg-white relative ${
                         isDataColumn ? 'cursor-pointer' : ''
                       } ${
                         isSelected 
-                          ? 'bg-blue-100 ring-2 ring-blue-500' 
-                          : 'hover:bg-gray-50'
+                          ? 'border-2 border-blue-500' 
+                          : 'border-r border-b border-gray-200 last:border-r-0 hover:bg-gray-50'
                       }`}
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {isEditing ? (
+                        <div className="relative">
+                          <input
+                            type={currentColumn && currentColumn.type === 'number' ? 'number' : 'text'}
+                            value={editingValue}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setEditingValue(newValue);
+                              
+                              // Clear error if user starts typing a valid number
+                              if (currentColumn && currentColumn.type === 'number') {
+                                if (newValue === '' || !isNaN(Number(newValue))) {
+                                  setCellError('');
+                                } else {
+                                  setCellError('Please enter a number');
+                                }
+                              } else {
+                                setCellError('');
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              // Prevent typing non-numeric characters in number fields
+                              if (currentColumn && currentColumn.type === 'number') {
+                                // Allow: backspace, delete, tab, escape, enter, arrow keys, and numbers
+                                const allowedKeys = [
+                                  'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
+                                  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+                                  'Home', 'End'
+                                ];
+                                
+                                // Allow numbers, decimal point, and minus sign
+                                const isNumber = /^[0-9.-]$/.test(e.key);
+                                
+                                if (!allowedKeys.includes(e.key) && !isNumber) {
+                                  e.preventDefault();
+                                  setCellError('Please enter a number');
+                                }
+                              }
+                            }}
+                            onBlur={() => handleCellEdit(editingValue)}
+                            className="w-full bg-transparent border-none outline-none text-xs"
+                            autoFocus
+                          />
+                          {hasError && (
+                            <div className="absolute top-full left-0 right-0 bg-red-50 text-red-600 text-xs px-2 py-1 border border-red-200 rounded-b z-10">
+                              {cellError}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
                     </td>
                   );
                 })}
@@ -603,10 +823,10 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
             {/* Empty row for adding new rows - only show if there are columns */}
             {columns.length > 0 && (
               <tr className="group">
-                <td colSpan={columns.length + 2} className="px-4 py-3">
+                <td colSpan={columns.length + 2} className="px-3 py-2 bg-white">
                   <button 
                     onClick={handleAddRow}
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                    className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700 transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <line x1="12" y1="5" x2="12" y2="19"/>
@@ -620,18 +840,16 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
           </tbody>
         </table>
         </div>
-        
-        {/* Record count bar - positioned relative to table container */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-between z-20">
-          <div className="text-sm text-gray-600">
-            {rows.length} record{rows.length !== 1 ? 's' : ''}
-          </div>
-          <div className="text-xs text-gray-500">
-            {columns.length} column{columns.length !== 1 ? 's' : ''}
-          </div>
-        </div>
       </div>
-      
+      {/* Record count bar - positioned relative to table container */}
+      <div className="sticky bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-between z-20">
+        <div className="text-xs text-gray-600">
+        {rows.length} record{rows.length !== 1 ? 's' : ''}
+        </div>
+        <div className="text-xs text-gray-500">
+        {columns.length} column{columns.length !== 1 ? 's' : ''}
+        </div>
+    </div>
 
 
     </div>
