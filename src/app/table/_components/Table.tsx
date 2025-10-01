@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { type View, type Table } from "@prisma/client";
 import { api } from "~/trpc/react";
 import { ColumnType } from '@prisma/client';
@@ -51,6 +51,10 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
   const [newColumnName, setNewColumnName] = useState('');
   const [newColumnType, setNewColumnType] = useState<ColumnType>(ColumnType.STRING);
   const [columnNameError, setColumnNameError] = useState('');
+  
+  // Cell selection state
+  const [selectedCell, setSelectedCell] = useState<{rowIndex: number, columnIndex: number} | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Table state management with fetched data
   const [columns, setColumns] = useState<TableColumn[]>([]);
@@ -109,6 +113,81 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showAddColumnModal]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!selectedCell) return;
+      
+      const { rowIndex, columnIndex } = selectedCell;
+      const maxRow = rows.length - 1;
+      const maxCol = columns.length - 1;
+      
+      let newRowIndex = rowIndex;
+      let newColumnIndex = columnIndex;
+      
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault();
+          newRowIndex = Math.max(0, rowIndex - 1);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          newRowIndex = Math.min(maxRow, rowIndex + 1);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          newColumnIndex = Math.max(0, columnIndex - 1);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          newColumnIndex = Math.min(maxCol, columnIndex + 1);
+          break;
+        case 'Tab':
+          e.preventDefault();
+          if (e.shiftKey) {
+            if (columnIndex > 0) {
+              newColumnIndex = columnIndex - 1;
+            } else if (rowIndex > 0) {
+              newRowIndex = rowIndex - 1;
+              newColumnIndex = maxCol;
+            }
+          } else {
+            if (columnIndex < maxCol) {
+              newColumnIndex = columnIndex + 1;
+            } else if (rowIndex < maxRow) {
+              newRowIndex = rowIndex + 1;
+              newColumnIndex = 0;
+            }
+          }
+          break;
+        case 'Escape':
+          setSelectedCell(null);
+          return;
+      }
+      
+      setSelectedCell({ rowIndex: newRowIndex, columnIndex: newColumnIndex });
+      
+      // Scroll to the new selected cell
+      setTimeout(() => {
+        scrollToSelectedCell(newRowIndex, newColumnIndex);
+      }, 0);
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [selectedCell, rows.length, columns.length]);
+
+  // Auto-scroll to selected cell when selection changes
+  useEffect(() => {
+    if (selectedCell) {
+      setTimeout(() => {
+        scrollToSelectedCell(selectedCell.rowIndex, selectedCell.columnIndex);
+      }, 0);
+    }
+  }, [selectedCell]);
 
   const createColumn = async ({name, type}: {name: string, type: ColumnType}) => {
     // Check for duplicate column name
@@ -235,7 +314,31 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
     setNewColumnName('');
     setNewColumnType(ColumnType.STRING);
     setColumnNameError('');
-  } 
+  }
+
+  // Cell selection and navigation functions
+  const handleCellClick = (rowIndex: number, columnIndex: number) => {
+    console.log('Cell clicked:', { rowIndex, columnIndex });
+    setSelectedCell({ rowIndex, columnIndex });
+  }
+
+  const scrollToSelectedCell = (rowIndex: number, columnIndex: number) => {
+    // Find the selected cell element
+    const cellElement = tableContainerRef.current?.querySelector(
+      `[data-row-index="${rowIndex}"][data-column-index="${columnIndex}"]`
+    );
+    
+    if (cellElement) {
+      // Scroll the cell into view with some padding
+      cellElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
+    }
+  }
+
+
 
   const handleAddRow = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -335,11 +438,19 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  return (
-    <div className="h-full w-full bg-white">
-      {/* Table Container with proper overflow */}
-      <div className="h-full overflow-auto">
-        <table className="w-full min-w-max">
+    return (
+    <div className="h-full w-full bg-white flex flex-col">
+      {/* Debug info */}
+      {selectedCell && (
+        <div className="bg-gray-100 p-2 text-xs text-gray-600 flex-shrink-0">
+          Selected: Row {selectedCell.rowIndex}, Column {selectedCell.columnIndex}
+        </div>
+      )}
+      
+      {/* Table Container with scrollable margins */}
+      <div ref={tableContainerRef} className="flex-1 overflow-auto min-h-0">
+        <div className="pr-20 pb-20">
+          <table className="w-full min-w-max">
           {/* Table Header */}
           <thead className="bg-gray-50 sticky top-0 z-10">
             {tanstackTable.getHeaderGroups().map((headerGroup) => (
@@ -456,16 +567,37 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
 
           {/* Table Body */}
           <tbody className="bg-white divide-y divide-gray-200">
-            {tanstackTable.getRowModel().rows.map((row) => (
+            {tanstackTable.getRowModel().rows.map((row, rowIndex) => (
               <tr key={row.id} className="group hover:bg-gray-50">
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    key={cell.id}
-                    className="px-4 py-3 text-sm text-gray-900 border-r border-gray-100 last:border-r-0"
-                  >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
+                {row.getVisibleCells().map((cell, cellIndex) => {
+                  // Skip the counter column (index 0) - data columns start from index 1
+                  const isDataColumn = cellIndex > 0;
+                  const dataColumnIndex = cellIndex - 1; // Convert to 0-based index for data columns
+                  const isSelected = selectedCell?.rowIndex === rowIndex && selectedCell?.columnIndex === dataColumnIndex;
+                  
+                  // Debug logging
+                  if (isDataColumn && isSelected) {
+                    console.log('Cell is selected:', { rowIndex, dataColumnIndex, selectedCell });
+                  }
+                  
+                  return (
+                    <td
+                      key={cell.id}
+                      onClick={() => isDataColumn && handleCellClick(rowIndex, dataColumnIndex)}
+                      data-row-index={rowIndex}
+                      data-column-index={dataColumnIndex}
+                      className={`px-4 py-3 text-sm text-gray-900 border-r border-gray-100 last:border-r-0 ${
+                        isDataColumn ? 'cursor-pointer' : ''
+                      } ${
+                        isSelected 
+                          ? 'bg-blue-100 ring-2 ring-blue-500' 
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             {/* Empty row for adding new rows - only show if there are columns */}
@@ -487,7 +619,20 @@ export default function Table({ view: _view, table: _table }: { view: View; tabl
             )}
           </tbody>
         </table>
+        </div>
+        
+        {/* Record count bar - positioned relative to table container */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-2 flex items-center justify-between z-20">
+          <div className="text-sm text-gray-600">
+            {rows.length} record{rows.length !== 1 ? 's' : ''}
+          </div>
+          <div className="text-xs text-gray-500">
+            {columns.length} column{columns.length !== 1 ? 's' : ''}
+          </div>
+        </div>
       </div>
+      
+
 
     </div>
   );

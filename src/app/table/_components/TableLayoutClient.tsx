@@ -108,7 +108,7 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
     return (
       <>
         <TableTaskbar />
-        <main className="w-full pt-14 min-h-[calc(100vh-3.5rem)] bg-[#fbfbfd]">
+        <main className="w-full pt-14 h-screen bg-[#fbfbfd]">
           <div className="mx-auto max-w-screen-2xl pl-14">
             <div className="bg-purple-100 flex items-center p-2">
               <div className="flex items-center space-x-2">
@@ -154,7 +154,7 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
         </div>
 
       {/* Main Content with Sidebar */}
-      <main className="w-full pt-32 pl-14 h-[calc(100vh-3.5rem)] bg-[#fbfbfd] flex overflow-hidden">
+      <main className="w-full pt-32 pl-14 h-screen bg-[#fbfbfd] flex overflow-hidden min-h-0">
         {/* View Sidebar */}
         {isSidebarOpen && (
           <ViewSidebar 
@@ -165,7 +165,7 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
         )}
         
         {/* Main Content Area */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden min-h-0">
           {children}
         </div>
       </main>
