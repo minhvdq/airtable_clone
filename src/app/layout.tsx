@@ -3,7 +3,7 @@ import "~/styles/globals.css";
 import { type Metadata } from "next";
 import { Geist } from "next/font/google";
 import { auth } from "~/server/auth";
-import CombinedProviders from "./provider"; 
+import CombinedProviders from "~/app/provider"; 
 
 export const metadata: Metadata = {
   title: "Airtable",
@@ -26,7 +26,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en" className={`${geist.variable}`}>
-      <body>
+      <body className="overflow-hidden">
         {/* 4. Use the new CombinedProviders component */}
         <CombinedProviders session={session}>
           {children}

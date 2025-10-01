@@ -8,7 +8,8 @@ import { useSelectedBaseStore } from '~/stores/selectedBaseStore'
 import { api } from "~/trpc/react";
 
 export default function BaseCard({ base, deleteBase, renameBase }: { base: Base, deleteBase: (id: string) => void, renameBase: (id: string, name: string) => void }) {
-    const tables = api.table.getAllForBase.useQuery({ baseId: base.id }).data ?? [];
+    const getTables = api.table.getAllForBase.useQuery({ baseId: base.id });
+    // const tables = getTables.data ?? [];
     const [showModal, setShowModal] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isRenaming, setIsRenaming] = useState(false);
@@ -99,7 +100,10 @@ export default function BaseCard({ base, deleteBase, renameBase }: { base: Base,
 
     // Handle base card click to navigate to table
     const handleBaseClick = async () => {
+        const result = await getTables.refetch();
+        const tables = result.data ?? [];
         console.log('Base clicked:', base.name);
+        console.log("tables", JSON.stringify(tables))
         const tableId = tables?.[0]?.id ?? "";
         console.log("id", tableId)
         setSelectedBase(base);

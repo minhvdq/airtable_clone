@@ -1,5 +1,5 @@
-import AuthWrapper from './_components/AuthWrapper';
-import TableLayoutClient from './_components/TableLayoutClient';
+import AuthWrapper from '~/app/table/_components/AuthWrapper';
+import TableLayoutClient from '~/app/table/_components/TableLayoutClient';
 
 interface TableLayoutProps {
   children: React.ReactNode;

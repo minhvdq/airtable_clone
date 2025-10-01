@@ -11,9 +11,9 @@ export const columnRouter = createTRPCRouter({
         }),
 
     create: protectedProcedure
-        .input(z.object({ tableId: z.string(), name: z.string(), position: z.number(), type: z.number() }))
+        .input(z.object({ tableId: z.string(), name: z.string(), position: z.number(), type: z.nativeEnum(ColumnType) }))
         .mutation(async ({ ctx, input }) => {
-            const column = await ctx.db.column.create({ data: { tableId: input.tableId, name: input.name, position: input.position, type: input.type === 0 ? ColumnType.STRING : ColumnType.INTEGER } });
+            const column = await ctx.db.column.create({ data: { tableId: input.tableId, name: input.name, position: input.position, type: input.type } });
             return column ?? null;
         }),
 

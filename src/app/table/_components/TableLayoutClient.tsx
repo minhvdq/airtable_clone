@@ -1,12 +1,13 @@
 "use client"
 
 import { useRouter } from 'next/navigation';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { api } from '~/trpc/react';
 import { useTableNavigationStore } from '~/stores/tableNavigationStore';
-import TableTaskbar from '~/app/_components/table/TableTaskbar';
-import ViewTaskbar from '~/app/_components/table/ViewTaskbar';
-import { type Table } from '@prisma/client';
+import TableTaskbar from '~/app/table/_components/TableTaskbar';
+import ViewTaskbar from '~/app/table/_components/ViewTaskbar';
+import ViewSidebar from '~/app/table/_components/ViewSidebar';
+import { type Table, type View } from '@prisma/client';
 
 interface TableLayoutClientProps {
   children: React.ReactNode;
@@ -14,8 +15,10 @@ interface TableLayoutClientProps {
 
 export default function TableLayoutClient({ children }: TableLayoutClientProps) {
   const router = useRouter();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { 
     currentViewId, 
+    currentTableId,
     setNavigation 
   } = useTableNavigationStore();
 
@@ -100,8 +103,8 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
     }
   };
 
-  // Show loading state for initial load
-  if (viewQuery.isLoading || !viewQuery.data) {
+  // Show loading state only when we have a viewId but no data yet
+  if (currentViewId && (viewQuery.isLoading || !viewQuery.data)) {
     return (
       <>
         <TableTaskbar />
@@ -133,8 +136,10 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
                    tables={tables} 
                    curTable={table} 
                    curView={view ?? null}
+                   views={(view?.table as { views?: View[] })?.views ?? []}
                    handleAddTable={handleAddTable}
                    handleTableClick={handleTableClick}
+                   onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                  />
           
           {/* Show subtle loading indicator if data is being refetched */}
@@ -148,13 +153,20 @@ export default function TableLayoutClient({ children }: TableLayoutClientProps) 
           )}
         </div>
 
-      {/* Main Content */}
-      <main className="w-full pt-20 pl-14 min-h-[calc(100vh-3.5rem)] bg-[#fbfbfd]">
-        <div className="mx-auto max-w-screen-2xl">
-          {/* Dynamic content area */}
-          <div className="p-6">
-            {children}
-          </div>
+      {/* Main Content with Sidebar */}
+      <main className="w-full pt-32 pl-14 h-[calc(100vh-3.5rem)] bg-[#fbfbfd] flex overflow-hidden">
+        {/* View Sidebar */}
+        {isSidebarOpen && (
+          <ViewSidebar 
+            isOpen={isSidebarOpen}
+            tableId={currentTableId}
+            currentViewId={currentViewId}
+          />
+        )}
+        
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-hidden">
+          {children}
         </div>
       </main>
     </>

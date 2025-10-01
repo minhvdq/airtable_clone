@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { api } from "~/trpc/react";
 import { signOut } from "next-auth/react";
 import TaskBar from "~/app/_components/TaskBar";
-import BaseCard from "./BaseCard";
+import BaseCard from "~/app/_components/home/BaseCard";
 
 export default function MainPage() {
     const [fetchedBases] = api.base.getAllForUser.useSuspenseQuery();

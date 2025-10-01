@@ -2,8 +2,8 @@
 
 import { api } from "~/trpc/react";
 import { useState, useEffect } from "react";
-import TaskBar from "../TaskBar";
-import WorkspaceCard from "./WorkspaceCard";
+import TaskBar from "~/app/_components/TaskBar";
+import WorkspaceCard from "~/app/_components/Workspaces/WorkspaceCard";
 
 export default function WorkspacesPage() {
     const [fetchedBases] = api.base.getAllForUser.useSuspenseQuery();

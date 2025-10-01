@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "~/server/auth";
 import { api, HydrateClient } from "~/trpc/server";
-import MainPage from "./_components/home/MainPage";
+import MainPage from "~/app/_components/home/MainPage";
 
 export default async function Home() {
   const session = await auth();

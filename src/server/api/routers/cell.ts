@@ -9,6 +9,23 @@ export const cellRouter = createTRPCRouter({
             return cells;
         }),
 
+    getAllForTable: protectedProcedure
+        .input(z.object({ tableId: z.string() }))
+        .query(async ({ ctx, input }) => {
+            const cells = await ctx.db.cell.findMany({
+                where: {
+                    row: {
+                        tableId: input.tableId
+                    }
+                },
+                include: {
+                    row: true,
+                    column: true
+                }
+            });
+            return cells;
+        }),
+
     create: protectedProcedure
         .input(z.object({ rowId: z.string(), columnId: z.string(), value: z.string() }))
         .mutation(async ({ ctx, input }) => {

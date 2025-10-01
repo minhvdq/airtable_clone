@@ -4,17 +4,24 @@ import Link from "next/link"
 import { useSession, signOut } from "next-auth/react";
 import { useState, useRef, useEffect } from "react";
 import { useSelectedBaseStore } from '~/stores/selectedBaseStore';
+import { api } from "~/trpc/react";
 
 export default function TableTaskbar() {
     const { data: session } = useSession();
     const { selectedBase } = useSelectedBaseStore();
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [isLogoHovered, setIsLogoHovered] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editName, setEditName] = useState("");
     const userMenuRef = useRef<HTMLDivElement>(null);
 
     const email = session?.user?.email ?? "User";
     const name = session?.user?.name ?? "User";
     const initial = name[0] ?? "U";
+
+    // tRPC mutations
+    const utils = api.useUtils();
+    const renameBase = api.base.rename.useMutation();
 
     // Close user menu when clicking outside
     useEffect(() => {
@@ -33,6 +40,56 @@ export default function TableTaskbar() {
         };
     }, [showUserMenu]);
 
+    // Initialize edit name when editing starts
+    useEffect(() => {
+        if (isEditing) {
+            setEditName(selectedBase?.name ?? "Untitled Base");
+        }
+    }, [isEditing, selectedBase?.name]);
+
+    const handleEditStart = () => {
+        setIsEditing(true);
+    };
+
+    const handleEditSave = async () => {
+        if (!selectedBase || !editName.trim() || editName.trim() === selectedBase.name) {
+            setIsEditing(false);
+            return;
+        }
+
+        try {
+            await renameBase.mutateAsync({
+                id: selectedBase.id,
+                name: editName.trim()
+            });
+            
+            // Update the selected base in the store
+            const { setSelectedBase } = useSelectedBaseStore.getState();
+            setSelectedBase({ ...selectedBase, name: editName.trim() });
+            
+            // Invalidate queries to sync across all components
+            await utils.base.getAllForUser.invalidate();
+            
+            setIsEditing(false);
+        } catch (err) {
+            console.error("Failed to rename base:", err);
+            setIsEditing(false);
+        }
+    };
+
+    const handleEditCancel = () => {
+        setIsEditing(false);
+        setEditName("");
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            void handleEditSave();
+        } else if (e.key === 'Escape') {
+            handleEditCancel();
+        }
+    };
+
     return (
         <>
             {/* Top Navigation Bar */}
@@ -46,12 +103,31 @@ export default function TableTaskbar() {
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                             </svg>
                         </div>
-                        <span className="ml-2 text-md font-semibold text-gray-900 truncate max-w-[120px]">{selectedBase?.name ?? "Untitled Base"}</span>
-                        <button className="flex h-4 w-4 items-center justify-center text-gray-500 hover:text-gray-700 flex-shrink-0">
-                            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M6 9l6 6 6-6"/>
-                            </svg>
-                        </button>
+                        {isEditing ? (
+                            <div className="flex items-center gap-2 ml-2">
+                                <input
+                                    type="text"
+                                    value={editName}
+                                    onChange={(e) => setEditName(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    onBlur={() => void handleEditSave()}
+                                    className="text-md font-semibold text-gray-900 bg-transparent border-none outline-none focus:ring-0 p-0 max-w-[120px]"
+                                    autoFocus
+                                />
+                            </div>
+                        ) : (
+                            <>
+                                <span className="ml-2 text-md font-semibold text-gray-900 truncate max-w-[120px]">{selectedBase?.name ?? "Untitled Base"}</span>
+                                <button 
+                                    onClick={handleEditStart}
+                                    className="flex h-4 w-4 items-center justify-center text-gray-500 hover:text-gray-700 flex-shrink-0"
+                                >
+                                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M6 9l6 6 6-6"/>
+                                    </svg>
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
 

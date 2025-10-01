@@ -4,7 +4,8 @@ import React, { useEffect, use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '~/trpc/react';
 import { useTableNavigationStore } from '~/stores/tableNavigationStore';
-import { type Filter, type Sort, type Column, type Row, type Cell, type Table, type View } from '@prisma/client';
+import { type Filter, type Sort, type View } from '@prisma/client';
+import Table from '~/app/table/_components/Table';
 
 export default function ViewPage({ params }: { params: Promise<{ id: string; viewId: string }> }) {
     const resolvedParams = use(params);
@@ -13,14 +14,12 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
     const viewId = resolvedParams.viewId;
     const { setNavigation } = useTableNavigationStore();
     
-    // Hook states for all data
-    const [view, setView] = useState<View | null>(null);
-    const [table, setTable] = useState<Table | null>(null);
-    const [baseId, setBaseId] = useState<string | null>(null);
-    const [filters, setFilters] = useState<Array<Filter>>([]);
-    const [sorts, setSorts] = useState<Array<Sort>>([]);
-    const [rows, setRows] = useState<Array<Row>>([]);
-    const [columns, setColumns] = useState<Array<Column>>([]);
+    // Hook states for all data (keeping for future use)
+    const [, setView] = useState<View | null>(null);
+    const [, setPrismaTable] = useState<unknown>(null);
+    const [, setBaseId] = useState<string | null>(null);
+    const [, setFilters] = useState<Array<Filter>>([]);
+    const [, setSorts] = useState<Array<Sort>>([]);
 
     // Fetch the view with all related data (optimized single query)
     const viewQuery = api.view.getById.useQuery({ id: viewId }, { 
@@ -36,12 +35,10 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
             
             // Update all hook states
             setView(viewData);
-            setTable(viewData.table ?? null);
+            setPrismaTable(viewData.table ?? null);
             setBaseId(viewData.table?.baseId ?? null);
             setFilters(viewData.filters ?? []);
             setSorts(viewData.sorts ?? []);
-            setColumns(viewData.table?.columns ?? []);
-            setRows(viewData.table?.rows ?? []);
             
             // Update navigation state
             if (viewData.table?.baseId) {
@@ -66,6 +63,7 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
         }
     }, [tableId, viewId, router, viewQuery.isSuccess, viewQuery.data]);
 
+
     // Show loading state while fetching data
     if (viewQuery.isLoading || !viewQuery.data) {
         return (
@@ -85,7 +83,6 @@ export default function ViewPage({ params }: { params: Promise<{ id: string; vie
     }
 
     return (
-        <div>
-        </div>
+        <Table view={viewQuery.data} table={viewQuery.data?.table ?? null} />
     );
 }
